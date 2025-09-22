@@ -157,9 +157,9 @@ class ExternalAPIService:
                     for item in items:
                         if item.get("name") == company_name:
                             return item.get("id")
-                    # 如果没有完全匹配，返回第一个结果的ID
-                    if items:
-                        return items[0].get("id")
+                    # 如果没有完全匹配，认定为未查询到相关单位信息
+                    logger.info(f"天眼查搜索未找到完全匹配的企业: {company_name}, 返回结果数: {len(items)}")
+                    return None
                 else:
                     logger.error(f"天眼查搜索API失败: {data.get('reason', '未知错误')}")
                     return None

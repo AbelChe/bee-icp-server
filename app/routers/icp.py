@@ -110,6 +110,15 @@ async def search_domain_icp(
         查询结果
     """
     try:
+        # 验证输入是否为域名或IP
+        from app.utils.domain_utils import is_valid_domain_or_ip
+        if not is_valid_domain_or_ip(word):
+            return ICPSearchResponse(
+                status=1,
+                error_message="查询内容需为域名/IP",
+                data=[]
+            )
+        
         logger.info(f"域名查询请求: {word}, 强制查询: {bool(force)}, 历史备案: {bool(history)}")
         
         # 调用服务层进行查询

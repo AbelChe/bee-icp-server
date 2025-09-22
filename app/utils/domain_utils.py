@@ -1,6 +1,88 @@
 import re
+import ipaddress
 from typing import List, Optional
 from publicsuffix2 import get_sld
+
+
+def is_valid_domain_or_ip(input_str: str) -> bool:
+    """
+    验证输入是否为有效的域名或IP地址
+    
+    Args:
+        input_str: 输入字符串
+        
+    Returns:
+        是否为有效的域名或IP地址
+    """
+    if not input_str or not isinstance(input_str, str):
+        return False
+    
+    input_str = input_str.strip()
+    
+    # 检查是否为IP地址
+    if is_valid_ip(input_str):
+        return True
+    
+    # 检查是否为域名
+    return is_valid_domain(input_str)
+
+
+def is_valid_ip(ip_str: str) -> bool:
+    """
+    验证是否为有效的IP地址（IPv4或IPv6）
+    
+    Args:
+        ip_str: IP地址字符串
+        
+    Returns:
+        是否为有效的IP地址
+    """
+    try:
+        ipaddress.ip_address(ip_str)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_domain(domain: str) -> bool:
+    """
+    验证是否为有效的域名格式
+    
+    Args:
+        domain: 域名字符串
+        
+    Returns:
+        是否为有效的域名
+    """
+    if not domain or len(domain) > 253:
+        return False
+    
+    # 如果是IP地址，则不是域名
+    if is_valid_ip(domain):
+        return False
+    
+    # 域名正则表达式
+    # 允许字母、数字、连字符和点，但不能以连字符开头或结尾
+    domain_pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$'
+    
+    if not re.match(domain_pattern, domain):
+        return False
+    
+    # 检查每个标签的长度（不超过63个字符）
+    labels = domain.split('.')
+    for label in labels:
+        if len(label) > 63 or len(label) == 0:
+            return False
+    
+    # 至少包含一个点（顶级域名）
+    if '.' not in domain:
+        return False
+    
+    # 域名必须包含至少一个字母（不能全是数字）
+    if not re.search(r'[a-zA-Z]', domain):
+        return False
+    
+    return True
 
 
 def extract_root_domain(domain: str) -> str:

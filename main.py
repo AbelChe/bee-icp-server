@@ -15,7 +15,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="ICP备案查询服务",
     description="企业ICP备案域名查询API服务",
-    version="1.0.0",
+    version="1.2.0",
     debug=settings.debug
 )
 

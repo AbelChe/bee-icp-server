@@ -15,7 +15,7 @@ class ExternalAPIService:
     def __init__(self):
         self.chinaz_api_key = settings.chinaz_api_key
         self.tianyancha_api_key = settings.tianyancha_api_key
-        self.timeout = 10.0  # 设置超时为10秒
+        self.timeout = 8.0  # 设置超时为8秒
         self.max_retries = 3  # 最大重试次数
     
     async def _query_chinaz_with_retry(self, url: str, params: Dict, query_type: str, keyword: str) -> Optional[List[Dict]]:

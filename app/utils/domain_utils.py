@@ -1,7 +1,7 @@
 import re
 import ipaddress
 from typing import List, Optional
-from publicsuffix2 import get_sld
+from publicsuffix2 import get_sld, get_public_suffix
 
 
 def is_valid_domain_or_ip(input_str: str) -> bool:
@@ -27,6 +27,7 @@ def is_valid_domain_or_ip(input_str: str) -> bool:
     return is_valid_domain(input_str)
 
 
+
 def is_valid_ip(ip_str: str) -> bool:
     """
     验证是否为有效的IP地址（IPv4或IPv6）
@@ -40,6 +41,23 @@ def is_valid_ip(ip_str: str) -> bool:
     try:
         ipaddress.ip_address(ip_str)
         return True
+    except ValueError:
+        return False
+
+
+def is_private_ip(ip_str: str) -> bool:
+    """
+    判断IP地址是否为内网IP（私有IP地址）
+    
+    Args:
+        ip_str: IP地址字符串
+        
+    Returns:
+        是否为内网IP地址
+    """
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.is_private
     except ValueError:
         return False
 
@@ -84,6 +102,26 @@ def is_valid_domain(domain: str) -> bool:
     
     return True
 
+
+def is_icann_domain(domain: str) -> bool:
+    """
+    判断域名是否为 ICANN 注册的域名
+    
+    Args:
+        domain: 域名
+        
+    Returns:
+        是否为 ICANN 注册的域名
+    """
+    if not domain:
+        return False
+    
+    # 标准化域名
+    normalized = normalize_domain(domain)
+    
+    if get_public_suffix(normalized, strict=True) is None:
+        return False
+    return True
 
 def extract_root_domain(domain: str) -> str:
     """

@@ -15,7 +15,7 @@ class ExternalAPIService:
     def __init__(self):
         self.chinaz_api_key = settings.chinaz_api_key
         self.tianyancha_api_key = settings.tianyancha_api_key
-        self.timeout = 8.0  # 设置超时为8秒
+        self.timeout = 10.0  # 设置超时为10秒
         self.max_retries = 3  # 最大重试次数
     
     async def _query_chinaz_with_retry(self, url: str, params: Dict, query_type: str, keyword: str) -> Optional[List[Dict]]:
@@ -29,8 +29,14 @@ class ExternalAPIService:
             keyword: 查询关键词
             
         Returns:
-            查询结果列表或None
+            查询结果列表，如果无数据返回空列表
+            
+        Raises:
+            Exception: 当重试次数用尽仍无法获取有效响应时抛出异常
         """
+        last_exception = None
+        last_error_message = None
+        
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"使用站长之家API{query_type}查询, keyword: {keyword}, 第{attempt + 1}次查询")
@@ -49,31 +55,45 @@ class ExternalAPIService:
                             logger.info(f"站长之家API{query_type}查询成功: {keyword}, 返回{len(result)}条记录")
                             return result
                     elif data.get("StateCode") == -1:
-                        logger.warning(f"站长之家API{query_type}查询存在异常, keyword: {keyword}, {data.get('StateCode')} {data.get('Reason', '未知错误')}")
+                        error_msg = f"站长之家API{query_type}查询存在异常, keyword: {keyword}, {data.get('StateCode')} {data.get('Reason', '未知错误')}"
+                        logger.warning(error_msg)
+                        last_error_message = error_msg
                         # StateCode为-1时继续重试
+                        if attempt < self.max_retries - 1:
+                            await asyncio.sleep(1)  # 重试前等待1秒
                         continue
                     else:
-                        logger.error(f"站长之家API{query_type}查询失败: {keyword}, {data.get('Reason', '未知错误')}")
-                        return None
+                        # 其他StateCode表示明确的失败，直接返回空列表
+                        logger.warning(f"站长之家API{query_type}查询返回错误状态: {keyword}, StateCode: {data.get('StateCode')}, {data.get('Reason', '未知错误')}")
+                        return []
                         
-            except httpx.TimeoutException:
-                logger.warning(f"站长之家API{query_type}查询超时: {keyword}, 第{attempt + 1}次尝试")
+            except httpx.TimeoutException as e:
+                error_msg = f"站长之家API{query_type}查询超时: {keyword}, 第{attempt + 1}次尝试"
+                logger.warning(error_msg)
+                last_exception = e
+                last_error_message = error_msg
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(1)  # 重试前等待1秒
                     continue
-                else:
-                    logger.error(f"站长之家API{query_type}查询超时: {keyword}, 已达到最大重试次数")
-                    return None
             except Exception as e:
-                logger.warning(f"站长之家API{query_type}查询异常: {keyword}, 第{attempt + 1}次尝试, 错误: {str(e)}")
+                error_msg = f"站长之家API{query_type}查询异常: {keyword}, 第{attempt + 1}次尝试, 错误: {str(e)}"
+                logger.warning(error_msg)
+                last_exception = e
+                last_error_message = error_msg
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(1)  # 重试前等待1秒
                     continue
-                else:
-                    logger.error(f"站长之家API{query_type}查询异常: {keyword}, 已达到最大重试次数, 错误: {str(e)}")
-                    return None
         
-        return None
+        # 重试次数用尽，抛出异常
+        final_error_msg = f"站长之家API{query_type}查询失败: {keyword}, 已达到最大重试次数({self.max_retries})"
+        if last_error_message:
+            final_error_msg += f", 最后错误: {last_error_message}"
+        
+        logger.error(final_error_msg)
+        if last_exception:
+            raise Exception(final_error_msg) from last_exception
+        else:
+            raise Exception(final_error_msg)
     
     async def query_chinaz_by_company(self, company_name: str) -> Optional[List[Dict]]:
         """
@@ -83,7 +103,7 @@ class ExternalAPIService:
             company_name: 企业名称
             
         Returns:
-            查询结果列表或None
+            查询结果列表或None（API异常时返回None）
         """
         if not self.chinaz_api_key:
             logger.warning("站长之家API密钥未配置")
@@ -96,7 +116,11 @@ class ExternalAPIService:
             "ChinazVer": "1.0"
         }
         
-        return await self._query_chinaz_with_retry(url, params, "企业", company_name)
+        try:
+            return await self._query_chinaz_with_retry(url, params, "企业", company_name)
+        except Exception as e:
+            logger.error(f"站长之家企业查询API异常: {company_name}, 错误: {str(e)}")
+            return None
     
     async def query_chinaz_by_domain(self, domain: str) -> Optional[List[Dict]]:
         """
@@ -106,7 +130,7 @@ class ExternalAPIService:
             domain: 域名
             
         Returns:
-            查询结果列表或None
+            查询结果列表或None（API异常时返回None）
         """
         if not self.chinaz_api_key:
             logger.warning("站长之家API密钥未配置")
@@ -119,7 +143,11 @@ class ExternalAPIService:
             "ChinazVer": "1.0"
         }
         
-        return await self._query_chinaz_with_retry(url, params, "域名", domain)
+        try:
+            return await self._query_chinaz_with_retry(url, params, "域名", domain)
+        except Exception as e:
+            logger.error(f"站长之家域名查询API异常: {domain}, 错误: {str(e)}")
+            return None
     
     async def search_tianyancha_company(self, company_name: str) -> Optional[int]:
         """

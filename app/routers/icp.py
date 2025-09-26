@@ -111,13 +111,29 @@ async def search_domain_icp(
     """
     try:
         # 验证输入是否为域名或IP
-        from app.utils.domain_utils import is_valid_domain_or_ip
+        from app.utils.domain_utils import is_valid_domain_or_ip, is_icann_domain, is_private_ip
         if not is_valid_domain_or_ip(word):
             return ICPSearchResponse(
                 status=1,
                 error_message="查询内容需为域名/IP",
                 data=[]
             )
+        
+        # 检查是否为私有IP
+        if is_private_ip(word):
+            return ICPSearchResponse(
+                status=1,
+                error_message="查询IP地址非法",
+                data=[]
+            )
+            
+        if not is_icann_domain(word):
+            return ICPSearchResponse(
+                status=1,
+                error_message="查询域名非法",
+                data=[]
+            )
+        
         
         logger.info(f"域名查询请求: {word}, 强制查询: {bool(force)}, 历史备案: {bool(history)}")
         

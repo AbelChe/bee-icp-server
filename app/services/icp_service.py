@@ -353,13 +353,10 @@ class ICPService:
         """
         # 标准化域名
         normalized_domain = normalize_domain(domain)
-        
-        root_domain = normalized_domain
-        if not normalized_domain.endswith('.gov.cn'):
-            root_domain = extract_root_domain(normalized_domain)
+        root_domain = extract_root_domain(normalized_domain)
         
         # 1. 优先检查数据库缓存（只检查域名记录是否存在）
-        if not force_refresh: 
+        if not force_refresh:
             cached_domain_records = db.query(ICPRecord).filter(
                 ICPRecord.domain == root_domain,
                 ICPRecord.is_historical == (True if include_history else False)
@@ -374,34 +371,20 @@ class ICPService:
                     # 获取单位名称
                     company_name = latest_record.company_name
                     if company_name:
-                        # 刷新该单位的备案资产
-                        await self.search_by_company(db, company_name, force_refresh, include_history=include_history)
-                        # 只返回用户所查询的域名的备案信息
-                        return self._format_response_data(cached_domain_records)
+                        # 返回该单位的所有备案资产
+                        return await self.search_by_company(db, company_name, force_refresh=False, include_history=include_history)
                     else:
                         # 如果没有单位名称，返回域名记录
                         return self._format_response_data(cached_domain_records)
-                else:
-                    # 2. 无缓存或强制刷新时，进行完整查询流程
-                    logger.info(f"未查询到缓存: {normalized_domain}")
         
+        # 2. 无缓存或强制刷新时，进行完整查询流程
         logger.info(f"开始查询域名备案: {normalized_domain}")
         
         # 判断是否为政府域名
-        result = []
-        company_records = []
-
         if is_gov_domain(normalized_domain):
-            gov_records = await self._search_and_cache_gov_domain(db, normalized_domain, include_history)
-            result.append(gov_records[0])
+            return await self._search_and_cache_gov_domain(db, normalized_domain, include_history)
         else:
-            company_records = await self._search_and_cache_regular_domain(db, normalized_domain, include_history)
-            for record in company_records:
-                if extract_root_domain(record.domain) == normalized_domain:
-                    result.append(record)
-                    break
-
-        return result
+            return await self._search_and_cache_regular_domain(db, normalized_domain, include_history)
     
     async def _search_and_cache_regular_domain(self, db: Session, domain: str, include_history: bool = False) -> List[ICPRecordBase]:
         """
@@ -428,17 +411,16 @@ class ICPService:
             
             # 2. 校验返回结果是否符合预期（属于查询域名的根域名）
             valid_results = []
-            company_name = ''
+            company_names = set()
             
             for result in api_results:
                 returned_domain = result.get('Domain', '')
                 if self._is_domain_match(returned_domain, root_domain):
                     valid_results.append(result)
                     # 收集单位名称用于补全查询
-                    _company_name = result.get('UnitName', '').strip()
-                    if _company_name:
-                        company_name = _company_name
-                        break
+                    company_name = result.get('UnitName', '').strip()
+                    if company_name:
+                        company_names.add(company_name)
                 else:
                     logger.info(f"过滤不匹配的域名: {returned_domain} (查询: {root_domain})")
             
@@ -448,9 +430,10 @@ class ICPService:
             
             # 3. 先使用单位名称获取该单位的所有备案资产（在保存域名查询结果之前）
             all_company_records = []
-            # 强制刷新获取该单位的所有备案资产
-            company_records = await self.search_by_company(db, company_name, force_refresh=True, include_history=include_history)
-            all_company_records.extend(company_records)
+            for company_name in company_names:
+                # 强制刷新获取该单位的所有备案资产
+                company_records = await self.search_by_company(db, company_name, force_refresh=True, include_history=include_history)
+                all_company_records.extend(company_records)
             
             # 4. 转换并保存域名查询结果（确保域名记录也被保存）
             converted_data = []
@@ -487,7 +470,7 @@ class ICPService:
             domain_hierarchy = get_domain_hierarchy(domain)
             
             all_results = []
-            company_name = ''
+            company_names = set()
             
             # 逐级查询域名层级
             for level_domain in domain_hierarchy:
@@ -504,9 +487,9 @@ class ICPService:
                     if self._is_domain_match(returned_domain, root_domain):
                         valid_results.append(result)
                         # 收集单位名称
-                        _company_name = result.get('UnitName', '').strip()
-                        if _company_name:
-                            company_name = _company_name
+                        company_name = result.get('UnitName', '').strip()
+                        if company_name:
+                            company_names.add(company_name)
                 
                 if valid_results:
                     all_results.extend(valid_results)
@@ -526,10 +509,11 @@ class ICPService:
             
             # 使用单位名称补全查询备案信息并获取该单位的所有备案资产
             all_company_records = []
-            await self._fetch_and_cache_company_records(db, company_name)
-            # 获取该单位的所有备案记录
-            company_records = await self.search_by_company(db, company_name, force_refresh=True, include_history=include_history)
-            all_company_records.extend(company_records)
+            for company_name in company_names:
+                await self._fetch_and_cache_company_records(db, company_name)
+                # 获取该单位的所有备案记录
+                company_records = await self.search_by_company(db, company_name, force_refresh=False, include_history=include_history)
+                all_company_records.extend(company_records)
             
             # 返回该域名所属单位的所有备案资产
             return all_company_records
